@@ -9,7 +9,7 @@ resources:
 configMapGenerator:
   - name: dashboard-service-red
     files:
-      - service-red.json=../../dashboards/service-red.json
+      - dashboards/service-red.json
     options:
       labels:
         grafana_dashboard: "1"
