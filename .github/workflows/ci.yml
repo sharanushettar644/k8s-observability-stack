@@ -50,10 +50,11 @@ jobs:
 
       - name: Validate dashboards are valid JSON
         run: |
-          for f in dashboards/*.json; do python3 -m json.tool "$f" > /dev/null && echo "valid $f"; done
+          for f in k8s/monitoring/dashboards/*.json; do python3 -m json.tool "$f" > /dev/null && echo "valid $f"; done
 
       - name: Validate Kubernetes manifests
         run: |
+          set -euo pipefail
           for k in k8s/demo-app k8s/monitoring k8s/logging; do
             echo "::group::$k"
             kubectl kustomize "$k" | kubeconform -strict -summary -ignore-missing-schemas \
