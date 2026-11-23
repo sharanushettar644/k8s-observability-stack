@@ -1,0 +1,36 @@
+# Elasticsearch managed by ECK (Elastic Cloud on Kubernetes). ECK handles TLS,
+# the "elastic" user's password (Secret logging-es-elastic-user), upgrades
+# and rolling restarts.
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: logging
+spec:
+  version: 8.17.0
+  nodeSets:
+    - name: default
+      count: 1   # production: 3 nodes across zones
+      config:
+        # Avoids needing vm.max_map_count on the host (fine for small clusters).
+        node.store.allow_mmap: false
+      podTemplate:
+        spec:
+          containers:
+            - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: "-Xms1g -Xmx1g"
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 2Gi
+                limits:
+                  memory: 2Gi
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 10Gi

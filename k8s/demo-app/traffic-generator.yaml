@@ -1,0 +1,61 @@
+# Sends steady traffic to podinfo so dashboards have data. ERROR_PERCENT
+# controls how many requests hit /status/500. Trigger the HighErrorRate alert:
+#   kubectl -n demo set env deploy/traffic-generator ERROR_PERCENT=30
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-generator
+  labels:
+    app: traffic-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-generator
+  template:
+    metadata:
+      labels:
+        app: traffic-generator
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          env:
+            - name: TARGET
+              value: http://podinfo.demo.svc.cluster.local:9898
+            - name: ERROR_PERCENT
+              value: "2"
+            - name: REQUESTS_PER_SECOND
+              value: "5"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "sending ${REQUESTS_PER_SECOND} req/s to ${TARGET} (${ERROR_PERCENT}% errors)"
+              while true; do
+                i=0
+                while [ "$i" -lt "$REQUESTS_PER_SECOND" ]; do
+                  if [ $((RANDOM % 100)) -lt "$ERROR_PERCENT" ]; then path=/status/500; else path=/; fi
+                  curl -s -o /dev/null "${TARGET}${path}" &
+                  i=$((i + 1))
+                done
+                wait
+                sleep 1
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

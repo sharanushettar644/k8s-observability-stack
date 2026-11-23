@@ -1,0 +1,129 @@
+# promtool unit tests: promtool test rules prometheus/tests/app-alerts.test.yaml
+rule_files:
+  - ../rules/app-alerts.rules.yaml
+
+evaluation_interval: 30s
+
+tests:
+  # 10% of traffic failing -> HighErrorRate fires after its 2m "for".
+  - name: high error rate fires
+    interval: 30s
+    input_series:
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="200"}'
+        values: "0+27x30"   # 0.9 req/s
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="500"}'
+        values: "0+3x30"    # 0.1 req/s -> 10% errors
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: HighErrorRate
+        exp_alerts: []          # still pending
+      - eval_time: 10m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: demo
+              service: podinfo
+            exp_annotations:
+              summary: "podinfo is failing 10% of requests"
+              description: >-
+                More than 5% of requests to demo/podinfo
+                returned 5xx for 2 minutes. Check recent deploys and the service logs in Kibana.
+              runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#higherrorrate
+
+  # 1% errors is within budget -> no alert.
+  - name: low error rate stays quiet
+    interval: 30s
+    input_series:
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="200"}'
+        values: "0+297x30"
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="500"}'
+        values: "0+3x30"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  # A handful of failures on a nearly idle service should not page anyone.
+  - name: errors on negligible traffic stay quiet
+    interval: 30s
+    input_series:
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="500"}'
+        values: "0+1x30"    # ~0.03 req/s, all errors
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  # Every request takes 0.5-1s -> p95 above 500ms -> HighLatencyP95.
+  - name: slow responses fire latency alert
+    interval: 30s
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{namespace="demo", service="podinfo", le="0.1"}'
+        values: "0+0x40"
+      - series: 'http_request_duration_seconds_bucket{namespace="demo", service="podinfo", le="0.5"}'
+        values: "0+0x40"
+      - series: 'http_request_duration_seconds_bucket{namespace="demo", service="podinfo", le="1"}'
+        values: "0+30x40"
+      - series: 'http_request_duration_seconds_bucket{namespace="demo", service="podinfo", le="+Inf"}'
+        values: "0+30x40"
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="200"}'
+        values: "0+30x40"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighLatencyP95
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: demo
+              service: podinfo
+
+  - name: recording rules compute the error ratio
+    interval: 30s
+    input_series:
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="200"}'
+        values: "0+15x20"
+      - series: 'http_request_duration_seconds_count{namespace="demo", service="podinfo", status="503"}'
+        values: "0+5x20"
+    promql_expr_test:
+      - expr: service:http_error_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'service:http_error_ratio:rate5m{namespace="demo", service="podinfo"}'
+            value: 0.25
+
+  - name: crash-looping pod alerts immediately
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="demo", pod="podinfo-abc", container="podinfo"}'
+        values: "0 1 2 3 4 5 6"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PodRestartingFrequently
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: demo
+              pod: podinfo-abc
+              container: podinfo
+            exp_annotations:
+              summary: "demo/podinfo-abc restarted 6 times in 15 minutes"
+              description: Check `kubectl describe pod` for OOMKilled or failing probes, and the previous container's logs.
+              runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#podrestartingfrequently
+
+  - name: memory near limit
+    interval: 1m
+    input_series:
+      - series: 'container_memory_working_set_bytes{namespace="demo", pod="podinfo-abc", container="podinfo"}'
+        values: "120000000x10"
+      - series: 'kube_pod_container_resource_limits{namespace="demo", pod="podinfo-abc", container="podinfo", resource="memory"}'
+        values: "128000000x10"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: demo
+              pod: podinfo-abc
+              container: podinfo

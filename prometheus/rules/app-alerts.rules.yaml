@@ -1,0 +1,87 @@
+# Source of truth for application alerting. Unit-tested with promtool
+# (prometheus/tests/) and rendered into a PrometheusRule by
+# scripts/render-rules.py -> k8s/monitoring/prometheus-rules.yaml.
+#
+# Metrics come from any service exposing a standard
+# http_request_duration_seconds histogram (labels: status, ...), scraped
+# through a ServiceMonitor - e.g. the podinfo demo app in k8s/demo-app/.
+
+groups:
+  - name: app-red.recording
+    interval: 30s
+    rules:
+      # RED method: Rate, Errors, Duration - precomputed per service.
+      - record: service:http_requests:rate5m
+        expr: sum by (namespace, service) (rate(http_request_duration_seconds_count[5m]))
+
+      - record: service:http_errors:rate5m
+        expr: sum by (namespace, service) (rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
+
+      - record: service:http_error_ratio:rate5m
+        expr: service:http_errors:rate5m / service:http_requests:rate5m
+
+      - record: service:http_latency_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (namespace, service, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+  - name: app-red.alerts
+    rules:
+      - alert: HighErrorRate
+        expr: service:http_error_ratio:rate5m > 0.05 and service:http_requests:rate5m > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is failing {{ $value | humanizePercentage }} of requests"
+          description: >-
+            More than 5% of requests to {{ $labels.namespace }}/{{ $labels.service }}
+            returned 5xx for 2 minutes. Check recent deploys and the service logs in Kibana.
+          runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#higherrorrate
+
+      - alert: HighLatencyP95
+        expr: service:http_latency_seconds:p95_5m > 0.5 and service:http_requests:rate5m > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} p95 latency is {{ $value | humanizeDuration }}"
+          description: >-
+            95th percentile latency of {{ $labels.namespace }}/{{ $labels.service }}
+            has been above 500ms for 5 minutes.
+          runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#highlatencyp95
+
+      - alert: ServiceNoTraffic
+        expr: service:http_requests:rate5m == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} has received no requests for 10 minutes"
+          description: >-
+            {{ $labels.namespace }}/{{ $labels.service }} is scraped but serving no traffic.
+            Check ingress, DNS and upstream callers.
+          runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#servicenotraffic
+
+  - name: workload.alerts
+    rules:
+      - alert: ContainerMemoryNearLimit
+        expr: |
+          max by (namespace, pod, container) (container_memory_working_set_bytes{container!=""})
+            /
+          max by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory"})
+            > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is at {{ $value | humanizePercentage }} of its memory limit"
+          description: The container will be OOM-killed if usage keeps growing. Raise the limit or investigate a leak.
+          runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#containermemorynearlimit
+
+      - alert: PodRestartingFrequently
+        expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} restarted {{ $value | humanize }} times in 15 minutes"
+          description: Check `kubectl describe pod` for OOMKilled or failing probes, and the previous container's logs.
+          runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#podrestartingfrequently
