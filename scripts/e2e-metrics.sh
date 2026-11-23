@@ -36,11 +36,14 @@ echo "|---|---|---|" >> "$REPORT"
 targets_up()     { [ "$(prom 'up{namespace="demo", service="podinfo"} == 1' | count)" -ge 2 ]; }
 red_metrics()    { [ "$(prom 'service:http_requests:rate5m{namespace="demo", service="podinfo"} > 0' | count)" -ge 1 ]; }
 rules_loaded()   { kubectl get --raw "/api/v1/namespaces/$NS/services/kps-prometheus:9090/proxy/api/v1/rules" | grep -q '"HighErrorRate"'; }
+GRAFANA_PW=$(kubectl -n "$NS" get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d)
+kubectl -n "$NS" port-forward svc/kps-grafana 3000:80 >/tmp/grafana-port-forward.log 2>&1 &
+PF_PID=$!
+trap 'kill $PF_PID 2>/dev/null || true' EXIT
+sleep 3
 dashboard_ready() {
-  local pw; pw=$(kubectl -n "$NS" get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d)
-  kubectl -n "$NS" exec deploy/kps-grafana -c grafana -- \
-    wget -qO- --header "Authorization: Basic $(printf 'admin:%s' "$pw" | base64 | tr -d '\n')" \
-    'http://localhost:3000/api/search?query=Service%20RED' 2>/dev/null | grep -q '"uid":"service-red"'
+  curl -s -u "admin:${GRAFANA_PW}" 'http://127.0.0.1:3000/api/search?query=Service%20RED' \
+    -o /tmp/grafana-search.json 2>/dev/null && grep -q '"uid":"service-red"' /tmp/grafana-search.json
 }
 alert_firing()   { [ "$(prom 'ALERTS{alertname="HighErrorRate", alertstate="firing", namespace="demo"}' | count)" -ge 1 ]; }
 in_alertmanager() { kubectl get --raw "/api/v1/namespaces/$NS/services/kps-alertmanager:9093/proxy/api/v2/alerts?active=true" | grep -q '"alertname":"HighErrorRate"'; }
