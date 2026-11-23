@@ -77,6 +77,10 @@ tests:
               severity: warning
               namespace: demo
               service: podinfo
+            exp_annotations:
+              summary: "podinfo p95 latency is 975ms"
+              description: 95th percentile latency of demo/podinfo has been above 500ms for 5 minutes.
+              runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#highlatencyp95
 
   - name: recording rules compute the error ratio
     interval: 30s
@@ -127,3 +131,7 @@ tests:
               namespace: demo
               pod: podinfo-abc
               container: podinfo
+            exp_annotations:
+              summary: "demo/podinfo-abc (podinfo) is at 93.75% of its memory limit"
+              description: The container will be OOM-killed if usage keeps growing. Raise the limit or investigate a leak.
+              runbook_url: https://github.com/sharanushettar644/k8s-observability-stack/blob/main/docs/runbooks.md#containermemorynearlimit
