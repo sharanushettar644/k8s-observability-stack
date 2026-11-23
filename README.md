@@ -76,7 +76,7 @@ Plus the community rule set that ships with kube-prometheus-stack (node, kubelet
 
 ## Dashboards
 
-[`dashboards/service-red.json`](dashboards/service-red.json) is a *Service RED overview*. Pick a namespace and service to see request rate by status code, error ratio against the alert threshold, p50/p95/p99 latency, the busiest paths, CPU and memory against limits, restarts, and firing alerts. The Grafana sidecar loads it from a ConfigMap, alongside the cluster dashboards that ship with kube-prometheus-stack.
+[`k8s/monitoring/dashboards/service-red.json`](k8s/monitoring/dashboards/service-red.json) is a *Service RED overview*. Pick a namespace and service to see request rate by status code, error ratio against the alert threshold, p50/p95/p99 latency, the busiest paths, CPU and memory against limits, restarts, and firing alerts. The Grafana sidecar loads it from a ConfigMap, alongside the cluster dashboards that ship with kube-prometheus-stack.
 
 ## Logging (EFK)
 
@@ -117,9 +117,8 @@ Changing alert rules: edit `prometheus/rules/`, add a test case in `prometheus/t
 .
 ├── prometheus/rules/          # alert + recording rules (source of truth)
 ├── prometheus/tests/          # promtool unit tests
-├── dashboards/                # Grafana dashboards as JSON
 ├── helm/                      # values for kube-prometheus-stack and fluent-bit
-├── k8s/monitoring/            # generated PrometheusRule + dashboard ConfigMaps
+├── k8s/monitoring/            # generated PrometheusRule + Grafana dashboards (JSON)
 ├── k8s/logging/               # ECK Elasticsearch + Kibana
 ├── k8s/demo-app/              # podinfo, ServiceMonitor, traffic generator
 ├── docs/runbooks.md           # one runbook per alert
