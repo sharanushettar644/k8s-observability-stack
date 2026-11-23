@@ -138,7 +138,7 @@ Changing alert rules: edit `prometheus/rules/`, add a test case in `prometheus/t
 **Sharanabasava Shettar**: DevOps Engineer | CKA, CKAD
 
 I build Kubernetes platforms with proper observability (Prometheus, Grafana, Alertmanager, EFK, New Relic) on AWS, Azure and GCP.
-[LinkedIn](https://www.linkedin.com/in/sharanabasava-shettar)
+[LinkedIn](https://www.linkedin.com/in/sharan-shettar-0b699821a)
 
 ## License
 
