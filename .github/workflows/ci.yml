@@ -106,6 +106,8 @@ jobs:
           kubectl get pods -A
           kubectl -n monitoring get prometheusrules,servicemonitors -A || true
           kubectl -n monitoring logs statefulset/prometheus-kps-prometheus -c prometheus --tail=80 || true
+          echo "--- Grafana search response"; cat /tmp/grafana-search.json 2>/dev/null || true
+          echo "--- Grafana dashboard sidecar"; kubectl -n monitoring logs deploy/kps-grafana -c grafana-sc-dashboard --tail=50 || true
 
   # ---------------------------------------------------------------------------
   # Logging pipeline end to end on kind: container logs -> Fluent Bit -> ES
